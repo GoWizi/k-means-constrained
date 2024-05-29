@@ -13,26 +13,50 @@
 # License: BSD 3 clause
 
 import warnings
+
 import numpy as np
 import scipy.sparse as sp
-from .sklearn_import.metrics.pairwise import euclidean_distances
-from .sklearn_import.utils.extmath import row_norms, squared_norm, cartesian
-from .sklearn_import.utils.validation import check_array, check_random_state, as_float_array, check_is_fitted
-from joblib import Parallel
-from joblib import delayed
+from joblib import Parallel, delayed
+from ortools.graph.pywrapgraph import SimpleMinCostFlow
 
 # Internal scikit learn methods imported into this project
-from k_means_constrained.sklearn_import.cluster._k_means import _centers_dense, _centers_sparse
-from k_means_constrained.sklearn_import.cluster.k_means_ import _validate_center_shape, _tolerance, KMeans, \
-    _init_centroids
+from k_means_constrained.sklearn_import.cluster._k_means import (
+    _centers_dense,
+    _centers_sparse,
+)
+from k_means_constrained.sklearn_import.cluster.k_means_ import (
+    KMeans,
+    _init_centroids,
+    _tolerance,
+    _validate_center_shape,
+)
 
-from ortools.graph.python.min_cost_flow import SimpleMinCostFlow
+from .sklearn_import.metrics.pairwise import euclidean_distances
+from .sklearn_import.utils.extmath import cartesian, row_norms, squared_norm
+from .sklearn_import.utils.validation import (
+    as_float_array,
+    check_array,
+    check_is_fitted,
+    check_random_state,
+)
 
 
-def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-means++',
-                        n_init=10, max_iter=300, verbose=False,
-                        tol=1e-4, random_state=None, copy_x=True, n_jobs=1,
-                        return_n_iter=False):
+def k_means_constrained(
+    X,
+    n_clusters,
+    size_min=None,
+    size_max=None,
+    init="k-means++",
+    n_init=10,
+    max_iter=300,
+    verbose=False,
+    tol=1e-4,
+    random_state=None,
+    copy_x=True,
+    n_jobs=1,
+    return_n_iter=False,
+    sample_weights=None,
+):
     """K-Means clustering with minimum and maximum cluster size constraints.
 
     Read more in the :ref:`User Guide <k_means>`.
@@ -111,6 +135,11 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
     return_n_iter : bool, optional
         Whether or not to return the number of iterations.
 
+    sample_weights : array-like, shape (n_samples,), optional
+        The weights for each observation in X. Will be used for computing the
+        constrained problem with uneven sample capacities. Samples with more weight
+            will count more for the capacity constraints.
+
     Returns
     -------
     centroid : float ndarray with shape (k, n_features)
@@ -133,27 +162,40 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
         raise NotImplementedError("Not implemented for sparse X")
 
     if n_init <= 0:
-        raise ValueError("Invalid number of initializations."
-                         " n_init=%d must be bigger than zero." % n_init)
+        raise ValueError(
+            "Invalid number of initializations."
+            " n_init=%d must be bigger than zero." % n_init
+        )
     random_state = check_random_state(random_state)
 
+    if sample_weights is not None:
+        # Weights are used to scale the costs of the edges between X and C_dummy nodes
+        # This is to ensure that the flow is distributed according to the sample weights
+        sample_weights = np.array(sample_weights)
+        if sample_weights.shape[0] != X.shape[0]:
+            raise ValueError("`sample_weights` must be the same length as `X`")
+
     if max_iter <= 0:
-        raise ValueError('Number of iterations should be a positive number,'
-                         ' got %d instead' % max_iter)
+        raise ValueError(
+            "Number of iterations should be a positive number,"
+            " got %d instead" % max_iter
+        )
 
     X = as_float_array(X, copy=copy_x)
     tol = _tolerance(X, tol)
 
     # Validate init array
-    if hasattr(init, '__array__'):
+    if hasattr(init, "__array__"):
         init = check_array(init, dtype=X.dtype.type, copy=True)
         _validate_center_shape(X, n_clusters, init)
 
         if n_init != 1:
             warnings.warn(
-                'Explicit initial center position passed: '
-                'performing only one init in k-means instead of n_init=%d'
-                % n_init, RuntimeWarning, stacklevel=2)
+                "Explicit initial center position passed: "
+                "performing only one init in k-means instead of n_init=%d" % n_init,
+                RuntimeWarning,
+                stacklevel=2,
+            )
             n_init = 1
 
     # subtract of mean of x for more accurate distance computations
@@ -162,7 +204,7 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
         # The copy was already done above
         X -= X_mean
 
-        if hasattr(init, '__array__'):
+        if hasattr(init, "__array__"):
             init -= X_mean
 
     # precompute squared norms of data points
@@ -176,10 +218,18 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
         for it in range(n_init):
             # run a k-means once
             labels, inertia, centers, n_iter_ = kmeans_constrained_single(
-                X, n_clusters,
-                size_min=size_min, size_max=size_max,
-                max_iter=max_iter, init=init, verbose=verbose, tol=tol,
-                x_squared_norms=x_squared_norms, random_state=random_state)
+                X,
+                n_clusters,
+                size_min=size_min,
+                size_max=size_max,
+                max_iter=max_iter,
+                init=init,
+                verbose=verbose,
+                tol=tol,
+                x_squared_norms=x_squared_norms,
+                random_state=random_state,
+                sample_weights=sample_weights,
+            )
             # determine if these results are the best so far
             if best_inertia is None or inertia < best_inertia:
                 best_labels = labels.copy()
@@ -190,14 +240,22 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
         # parallelisation of k-means runs
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
         results = Parallel(n_jobs=n_jobs, verbose=0)(
-            delayed(kmeans_constrained_single)(X, n_clusters,
-                                               size_min=size_min, size_max=size_max,
-                                               max_iter=max_iter, init=init,
-                                               verbose=verbose, tol=tol,
-                                               x_squared_norms=x_squared_norms,
-                                               # Change seed to ensure variety
-                                               random_state=seed)
-            for seed in seeds)
+            delayed(kmeans_constrained_single)(
+                X,
+                n_clusters,
+                size_min=size_min,
+                size_max=size_max,
+                max_iter=max_iter,
+                init=init,
+                verbose=verbose,
+                tol=tol,
+                x_squared_norms=x_squared_norms,
+                # Change seed to ensure variety
+                random_state=seed,
+                sample_weights=sample_weights,
+            )
+            for seed in seeds
+        )
         # Get results with the lowest inertia
         labels, inertia, centers, n_iters = zip(*results)
         best = np.argmin(inertia)
@@ -217,10 +275,19 @@ def k_means_constrained(X, n_clusters, size_min=None, size_max=None, init='k-mea
         return best_centers, best_labels, best_inertia
 
 
-def kmeans_constrained_single(X, n_clusters, size_min=None, size_max=None,
-                              max_iter=300, init='k-means++',
-                              verbose=False, x_squared_norms=None,
-                              random_state=None, tol=1e-4):
+def kmeans_constrained_single(
+    X,
+    n_clusters,
+    size_min=None,
+    size_max=None,
+    max_iter=300,
+    init="k-means++",
+    verbose=False,
+    x_squared_norms=None,
+    random_state=None,
+    tol=1e-4,
+    sample_weights=None,
+):
     """A single run of k-means constrained, assumes preparation completed prior.
 
     Parameters
@@ -264,6 +331,11 @@ def kmeans_constrained_single(X, n_clusters, size_min=None, size_max=None,
         in the cluster centers of two consecutive iterations to declare
         convergence.
 
+    sample_weights : array-like, shape (n_samples,), optional
+        The weights for each observation in X. Will be used for computing the
+        constrained problem with uneven sample capacities. Samples with more weight
+        will count more for the capacity constraints.
+
     verbose : boolean, optional
         Verbosity mode
 
@@ -300,7 +372,9 @@ def kmeans_constrained_single(X, n_clusters, size_min=None, size_max=None,
 
     best_labels, best_inertia, best_centers = None, None, None
     # init
-    centers = _init_centroids(X, n_clusters, init, random_state=random_state, x_squared_norms=x_squared_norms)
+    centers = _init_centroids(
+        X, n_clusters, init, random_state=random_state, x_squared_norms=x_squared_norms
+    )
     if verbose:
         print("Initialization complete")
 
@@ -312,26 +386,59 @@ def kmeans_constrained_single(X, n_clusters, size_min=None, size_max=None,
     if size_min is None:
         size_min = 0
     if size_max is None:
-        size_max = n_samples  # Number of data points
+        size_max = (
+            n_samples if sample_weights is None else sample_weights.sum()
+        )  # Number of data points
 
     # Check size min and max
-    if not ((size_min >= 0) and (size_min <= n_samples)
-            and (size_max >= 0) and (size_max <= n_samples)):
-        raise ValueError("size_min and size_max must be a positive number smaller "
-                         "than the number of data points or `None`")
+    if (
+        sample_weights is None
+        and not (
+            (size_min >= 0)
+            and (size_min <= n_samples)
+            and (size_max >= 0)
+            and (size_max <= n_samples)
+        )
+    ) or (
+        sample_weights is not None
+        and not (
+            (size_min >= 0)
+            and (size_min <= sample_weights.sum())
+            and (size_max >= 0)
+            and (size_max <= sample_weights.sum())
+        )
+    ):
+        raise ValueError(
+            "size_min and size_max must be a positive number smaller "
+            "than the number of data points or `None`"
+        )
     if size_max < size_min:
         raise ValueError("size_max must be larger than size_min")
-    if size_min * n_clusters > n_samples:
-        raise ValueError("The product of size_min and n_clusters cannot exceed the number of samples (X)")
-    if size_max * n_clusters < n_samples:
-        raise ValueError("The product of size_max and n_clusters must be larger than or equal the number of samples (X)")
+    if (sample_weights is None and size_min * n_clusters > n_samples) or (
+        sample_weights is not None and size_min * n_clusters > sample_weights.sum()
+    ):
+        raise ValueError(
+            "The product of size_min and n_clusters cannot exceed the number of samples (X)"
+        )
+    if (sample_weights is None and size_max * n_clusters < n_samples) or (
+        sample_weights is not None and size_max * n_clusters < sample_weights.sum()
+    ):
+        raise ValueError(
+            "The product of size_max and n_clusters must be larger than or equal the number of samples (X)"
+        )
 
     # iterations
     for i in range(max_iter):
         centers_old = centers.copy()
         # labels assignment is also called the E-step of EM
-        labels, inertia = \
-            _labels_constrained(X, centers, size_min, size_max, distances=distances)
+        labels, inertia = _labels_constrained(
+            X,
+            centers,
+            size_min,
+            size_max,
+            distances=distances,
+            sample_weights=sample_weights,
+        )
 
         # computation of the means is also called the M-step of EM
         if sp.issparse(X):
@@ -350,21 +457,28 @@ def kmeans_constrained_single(X, n_clusters, size_min=None, size_max=None,
         center_shift_total = squared_norm(centers_old - centers)
         if center_shift_total <= tol:
             if verbose:
-                print("Converged at iteration %d: "
-                      "center shift %e within tolerance %e"
-                      % (i, center_shift_total, tol))
+                print(
+                    "Converged at iteration %d: "
+                    "center shift %e within tolerance %e" % (i, center_shift_total, tol)
+                )
             break
 
     if center_shift_total > 0:
         # rerun E-step in case of non-convergence so that predicted labels
         # match cluster centers
-        best_labels, best_inertia = \
-            _labels_constrained(X, centers, size_min, size_max, distances=distances)
+        best_labels, best_inertia = _labels_constrained(
+            X,
+            centers,
+            size_min,
+            size_max,
+            distances=distances,
+            sample_weights=sample_weights,
+        )
 
     return best_labels, best_inertia, best_centers, i + 1
 
 
-def _labels_constrained(X, centers, size_min, size_max, distances):
+def _labels_constrained(X, centers, size_min, size_max, distances, sample_weights=None):
     """Compute labels using the min and max cluster size constraint
 
     This will overwrite the 'distances' array in-place.
@@ -386,6 +500,11 @@ def _labels_constrained(X, centers, size_min, size_max, distances):
     distances : numpy array, shape (n_samples,)
         Pre-allocated array in which distances are stored.
 
+    sample_weights : array-like, shape (n_samples,), optional
+        The weights for each observation in X. Will be used for computing the
+        constrained problem with uneven sample capacities. Samples with more weight
+        will count more for the capacity constraints.
+
     Returns
     -------
     labels : numpy array, dtype=np.int, shape (n_samples,)
@@ -401,7 +520,9 @@ def _labels_constrained(X, centers, size_min, size_max, distances):
     # K-mean original uses squared distances but this equivalent for constrained k-means
     D = euclidean_distances(X, C, squared=False)
 
-    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(X, C, D, size_min, size_max)
+    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(
+        X, C, D, size_min, size_max, sample_weights=sample_weights
+    )
     labels = solve_min_cost_flow_graph(edges, costs, capacities, supplies, n_C, n_X)
 
     # cython k-means M step code assumes int32 inputs
@@ -414,7 +535,7 @@ def _labels_constrained(X, centers, size_min, size_max, distances):
     return labels, inertia
 
 
-def minimum_cost_flow_problem_graph(X, C, D, size_min, size_max):
+def minimum_cost_flow_problem_graph(X, C, D, size_min, size_max, sample_weights=None):
     # Setup minimum cost flow formulation graph
     # Vertices indexes:
     # X-nodes: [0, n(x)-1], C-nodes: [n(X), n(X)+n(C)-1], C-dummy nodes:[n(X)+n(C), n(X)+2*n(C)-1],
@@ -429,41 +550,68 @@ def minimum_cost_flow_problem_graph(X, C, D, size_min, size_max):
     art_ix = C_ix[-1] + 1
 
     # Edges
-    edges_X_C_dummy = cartesian([X_ix, C_dummy_ix])  # All X's connect to all C dummy nodes (C')
-    edges_C_dummy_C = np.stack([C_dummy_ix, C_ix], axis=1)  # Each C' connects to a corresponding C (centroid)
-    edges_C_art = np.stack([C_ix, art_ix * np.ones(n_C)], axis=1)  # All C connect to artificial node
+    edges_X_C_dummy = cartesian(
+        [X_ix, C_dummy_ix]
+    )  # All X's connect to all C dummy nodes (C')
+    edges_C_dummy_C = np.stack(
+        [C_dummy_ix, C_ix], axis=1
+    )  # Each C' connects to a corresponding C (centroid)
+    edges_C_art = np.stack(
+        [C_ix, art_ix * np.ones(n_C)], axis=1
+    )  # All C connect to artificial node
 
     edges = np.concatenate([edges_X_C_dummy, edges_C_dummy_C, edges_C_art])
 
     # Costs
     costs_X_C_dummy = D.reshape(D.size)
-    costs = np.concatenate([costs_X_C_dummy, np.zeros(edges.shape[0] - len(costs_X_C_dummy))])
+    costs = np.concatenate(
+        [costs_X_C_dummy, np.zeros(edges.shape[0] - len(costs_X_C_dummy))]
+    )
+
+    # Sample weights
+    if sample_weights is not None:
+        W = sample_weights
+        max_W = W.max()
+    else:
+        max_W = 1
 
     # Capacities - can set for max-k
     capacities_C_dummy_C = size_max * np.ones(n_C)
-    cap_non = n_X  # The total supply and therefore wont restrict flow
-    capacities = np.concatenate([
-        np.ones(edges_X_C_dummy.shape[0]),
-        capacities_C_dummy_C,
-        cap_non * np.ones(n_C)
-    ])
+    cap_non = (
+        n_X if sample_weights is None else W.sum()
+    )  # The total supply and therefore wont restrict flow
+    capacities = np.concatenate(
+        [
+            np.ones(edges_X_C_dummy.shape[0]) * max_W,
+            capacities_C_dummy_C,
+            cap_non * np.ones(n_C),
+        ]
+    )
 
     # Sources and sinks
-    supplies_X = np.ones(n_X)
+    supplies_X = np.ones(n_X) if sample_weights is None else W
     supplies_C = -1 * size_min * np.ones(n_C)  # Demand node
-    supplies_art = -1 * (n_X - n_C * size_min)  # Demand node
-    supplies = np.concatenate([
-        supplies_X,
-        np.zeros(n_C),  # C_dummies
-        supplies_C,
-        [supplies_art]
-    ])
+    supplies_art = -1 * (
+        (n_X if sample_weights is None else W.sum()) - n_C * size_min
+    )  # Demand node
+    supplies = np.concatenate(
+        [supplies_X, np.zeros(n_C), supplies_C, [supplies_art]]  # C_dummies
+    )
 
     # All arrays must be of int dtype for `SimpleMinCostFlow`
-    edges = edges.astype('int32')
-    costs = np.around(costs * 1000, 0).astype('int32')  # Times by 1000 to give extra precision
-    capacities = capacities.astype('int32')
-    supplies = supplies.astype('int32')
+    edges = edges.astype("int32")
+    costs = np.around(costs * 1000, 0).astype(
+        "int32"
+    )  # Times by 1000 to give extra precision
+    capacities = np.around(capacities * 100, 0).astype(
+        "int32"
+    )  # Times by 100 to give extra precision
+    supplies = np.around(supplies * 100, 0).astype(
+        "int32"
+    )  # Times by 100 to give extra precision
+
+    if supplies.sum() != 0:
+        supplies[-1 * (n_C * 2 + 2)] -= supplies.sum()
 
     return edges, costs, capacities, supplies, n_C, n_X
 
@@ -472,25 +620,39 @@ def solve_min_cost_flow_graph(edges, costs, capacities, supplies, n_C, n_X):
     # Instantiate a SimpleMinCostFlow solver.
     min_cost_flow = SimpleMinCostFlow()
 
-    if (edges.dtype != 'int32') or (costs.dtype != 'int32') \
-            or (capacities.dtype != 'int32') or (supplies.dtype != 'int32'):
-        raise ValueError("`edges`, `costs`, `capacities`, `supplies` must all be int dtype")
+    if (
+        (edges.dtype != "int32")
+        or (costs.dtype != "int32")
+        or (capacities.dtype != "int32")
+        or (supplies.dtype != "int32")
+    ):
+        raise ValueError(
+            "`edges`, `costs`, `capacities`, `supplies` must all be int dtype"
+        )
 
     N_edges = edges.shape[0]
     N_nodes = len(supplies)
 
     # Add each edge with associated capacities and cost
-    min_cost_flow.add_arcs_with_capacity_and_unit_cost(edges[:, 0], edges[:, 1], capacities, costs)
+    for e, cap, cost in zip(edges, capacities, costs):
+        min_cost_flow.AddArcWithCapacityAndUnitCost(
+            int(e[0]), int(e[1]), int(cap), int(cost)
+        )
 
     # Add node supplies
-    min_cost_flow.set_nodes_supplies(np.arange(len(supplies)), supplies)
+    for i in range(len(supplies)):
+        min_cost_flow.SetNodeSupply(i, int(supplies[i]))
 
     # Find the minimum cost flow between node 0 and node 4.
-    if min_cost_flow.solve() != min_cost_flow.OPTIMAL:
-        raise Exception('There was an issue with the min cost flow input.')
+    if min_cost_flow.Solve() != min_cost_flow.OPTIMAL:
+        raise Exception("There was an issue with the min cost flow input.")
 
     # Assignment
-    labels_M = np.array([min_cost_flow.flow(i) for i in range(n_X * n_C)]).reshape(n_X, n_C).astype('int32')
+    labels_M = (
+        np.array([min_cost_flow.Flow(i) for i in range(n_X * n_C)])
+        .reshape(n_X, n_C)
+        .astype("int32")
+    )
 
     labels = labels_M.argmax(axis=1)
     return labels
@@ -613,16 +775,37 @@ class KMeansConstrained(KMeans):
         https://github.com/google/or-tools/blob/master/ortools/graph/min_cost_flow.h
     """
 
-    def __init__(self, n_clusters=8, size_min=None, size_max=None, init='k-means++', n_init=10, max_iter=300, tol=1e-4,
-                 verbose=False, random_state=None, copy_x=True, n_jobs=1):
+    def __init__(
+        self,
+        n_clusters=8,
+        size_min=None,
+        size_max=None,
+        init="k-means++",
+        n_init=10,
+        max_iter=300,
+        tol=1e-4,
+        verbose=False,
+        random_state=None,
+        copy_x=True,
+        n_jobs=1,
+    ):
 
         self.size_min = size_min
         self.size_max = size_max
 
-        super().__init__(n_clusters=n_clusters, init=init, n_init=n_init, max_iter=max_iter, tol=tol,
-                         verbose=verbose, random_state=random_state, copy_x=copy_x, n_jobs=n_jobs)
+        super().__init__(
+            n_clusters=n_clusters,
+            init=init,
+            n_init=n_init,
+            max_iter=max_iter,
+            tol=tol,
+            verbose=verbose,
+            random_state=random_state,
+            copy_x=copy_x,
+            n_jobs=n_jobs,
+        )
 
-    def fit(self, X, y=None):
+    def fit(self, X, sample_weights=None):
         """Compute k-means clustering with given constants.
 
         Parameters
@@ -630,7 +813,10 @@ class KMeansConstrained(KMeans):
         X : array-like, shape=(n_samples, n_features)
             Training instances to cluster.
 
-        y : Ignored
+        sample_weights : array-like, shape=(n_samples,), optional
+            The weights for each observation in X. Will be used for computing the
+            constrained problem with uneven sample capacities. Samples with more weight
+            will count more for the capacity constraints.
 
         """
         if sp.issparse(X):
@@ -639,18 +825,27 @@ class KMeansConstrained(KMeans):
         random_state = check_random_state(self.random_state)
         X = self._check_fit_data(X)
 
-        self.cluster_centers_, self.labels_, self.inertia_, self.n_iter_ = \
+        self.cluster_centers_, self.labels_, self.inertia_, self.n_iter_ = (
             k_means_constrained(
-                X, n_clusters=self.n_clusters,
-                size_min=self.size_min, size_max=self.size_max,
+                X,
+                n_clusters=self.n_clusters,
+                size_min=self.size_min,
+                size_max=self.size_max,
                 init=self.init,
-                n_init=self.n_init, max_iter=self.max_iter, verbose=self.verbose,
-                tol=self.tol, random_state=random_state, copy_x=self.copy_x,
+                n_init=self.n_init,
+                max_iter=self.max_iter,
+                verbose=self.verbose,
+                tol=self.tol,
+                random_state=random_state,
+                copy_x=self.copy_x,
                 n_jobs=self.n_jobs,
-                return_n_iter=True)
+                return_n_iter=True,
+                sample_weights=sample_weights,
+            )
+        )
         return self
 
-    def predict(self, X, size_min='init', size_max='init'):
+    def predict(self, X, size_min="init", size_max="init"):
         """
         Predict the closest cluster each sample in X belongs to given the provided constraints.
         The constraints can be temporally overridden when determining which cluster each datapoint is assigned to.
@@ -683,15 +878,15 @@ class KMeansConstrained(KMeans):
         if sp.issparse(X):
             raise NotImplementedError("Not implemented for sparse X")
 
-        if size_min == 'init':
+        if size_min == "init":
             size_min = self.size_min
-        if size_max == 'init':
+        if size_max == "init":
             size_max = self.size_max
 
         n_clusters = self.n_clusters
         n_samples = X.shape[0]
 
-        check_is_fitted(self, 'cluster_centers_')
+        check_is_fitted(self, "cluster_centers_")
 
         X = self._check_test_data(X)
 
@@ -706,21 +901,30 @@ class KMeansConstrained(KMeans):
             size_max = n_samples  # Number of data points
 
         # Check size min and max
-        if not ((size_min >= 0) and (size_min <= n_samples)
-                and (size_max >= 0) and (size_max <= n_samples)):
-            raise ValueError("size_min and size_max must be a positive number smaller "
-                             "than the number of data points or `None`")
+        if not (
+            (size_min >= 0)
+            and (size_min <= n_samples)
+            and (size_max >= 0)
+            and (size_max <= n_samples)
+        ):
+            raise ValueError(
+                "size_min and size_max must be a positive number smaller "
+                "than the number of data points or `None`"
+            )
         if size_max < size_min:
             raise ValueError("size_max must be larger than size_min")
         if size_min * n_clusters > n_samples:
-            raise ValueError("The product of size_min and n_clusters cannot exceed the number of samples (X)")
+            raise ValueError(
+                "The product of size_min and n_clusters cannot exceed the number of samples (X)"
+            )
 
-        labels, inertia = \
-            _labels_constrained(X, self.cluster_centers_, size_min, size_max, distances=distances)
+        labels, inertia = _labels_constrained(
+            X, self.cluster_centers_, size_min, size_max, distances=distances
+        )
 
         return labels
 
-    def fit_predict(self, X, y=None):
+    def fit_predict(self, X, sample_weights=None):
         """Compute cluster centers and predict cluster index for each sample.
 
         Equivalent to calling fit(X) followed by predict(X) but also more efficient.
@@ -730,9 +934,14 @@ class KMeansConstrained(KMeans):
         X : {array-like, sparse matrix}, shape = [n_samples, n_features]
             New data to transform.
 
+        sample_weights : array-like, shape=(n_samples,), optional
+            The weights for each observation in X. Will be used for computing the
+            constrained problem with uneven sample capacities. Samples with more weight
+            will count more for the capacity constraints.
+
         Returns
         -------
         labels : array, shape [n_samples,]
             Index of the cluster each sample belongs to.
         """
-        return self.fit(X).labels_
+        return self.fit(X, sample_weights=sample_weights).labels_

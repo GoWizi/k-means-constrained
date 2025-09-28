@@ -17,7 +17,6 @@ import warnings
 import numpy as np
 import scipy.sparse as sp
 from joblib import Parallel, delayed
-from ortools.graph.pywrapgraph import SimpleMinCostFlow
 
 # Internal scikit learn methods imported into this project
 from k_means_constrained.sklearn_import.cluster._k_means import (
@@ -30,6 +29,7 @@ from k_means_constrained.sklearn_import.cluster.k_means_ import (
     _tolerance,
     _validate_center_shape,
 )
+from ortools.graph.python.min_cost_flow import SimpleMinCostFlow
 
 from .sklearn_import.metrics.pairwise import euclidean_distances
 from .sklearn_import.utils.extmath import cartesian, row_norms, squared_norm
@@ -635,21 +635,21 @@ def solve_min_cost_flow_graph(edges, costs, capacities, supplies, n_C, n_X):
 
     # Add each edge with associated capacities and cost
     for e, cap, cost in zip(edges, capacities, costs):
-        min_cost_flow.AddArcWithCapacityAndUnitCost(
+        min_cost_flow.add_arc_with_capacity_and_unit_cost(
             int(e[0]), int(e[1]), int(cap), int(cost)
         )
 
     # Add node supplies
     for i in range(len(supplies)):
-        min_cost_flow.SetNodeSupply(i, int(supplies[i]))
+        min_cost_flow.set_node_supply(i, int(supplies[i]))
 
     # Find the minimum cost flow between node 0 and node 4.
-    if min_cost_flow.Solve() != min_cost_flow.OPTIMAL:
+    if min_cost_flow.solve() != min_cost_flow.OPTIMAL:
         raise Exception("There was an issue with the min cost flow input.")
 
     # Assignment
     labels_M = (
-        np.array([min_cost_flow.Flow(i) for i in range(n_X * n_C)])
+        np.array([min_cost_flow.flow(i) for i in range(n_X * n_C)])
         .reshape(n_X, n_C)
         .astype("int32")
     )

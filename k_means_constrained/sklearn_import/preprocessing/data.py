@@ -1,15 +1,13 @@
 import numpy as np
-from scipy import sparse
-
-from k_means_constrained.sklearn_import.utils.sparsefuncs_fast import inplace_csr_row_normalize_l1, inplace_csr_row_normalize_l2
-
-from k_means_constrained.sklearn_import.utils.sparsefuncs import min_max_axis
 
 from k_means_constrained.sklearn_import.utils.extmath import row_norms
-from k_means_constrained.sklearn_import.utils.validation import check_array, FLOAT_DTYPES
+from k_means_constrained.sklearn_import.utils.validation import (
+    check_array,
+    FLOAT_DTYPES,
+)
 
 
-def normalize(X, norm='l2', axis=1, copy=True, return_norm=False):
+def normalize(X, norm="l2", axis=1, copy=True, return_norm=False):
     """Scale input vectors individually to unit norm (vector length).
 
     Read more in the :ref:`User Guide <preprocessing_normalization>`.
@@ -59,44 +57,34 @@ def normalize(X, norm='l2', axis=1, copy=True, return_norm=False):
     <sphx_glr_auto_examples_preprocessing_plot_all_scaling.py>`.
 
     """
-    if norm not in ('l1', 'l2', 'max'):
+    if norm not in ("l1", "l2", "max"):
         raise ValueError("'%s' is not a supported norm" % norm)
 
     if axis == 0:
-        sparse_format = 'csc'
+        sparse_format = "csc"
     elif axis == 1:
-        sparse_format = 'csr'
+        sparse_format = "csr"
     else:
         raise ValueError("'%d' is not a supported axis" % axis)
 
-    X = check_array(X, sparse_format, copy=copy,
-                    estimator='the normalize function', dtype=FLOAT_DTYPES)
+    X = check_array(
+        X,
+        sparse_format,
+        copy=copy,
+        estimator="the normalize function",
+        dtype=FLOAT_DTYPES,
+    )
     if axis == 0:
         X = X.T
 
-    if sparse.issparse(X):
-        if return_norm and norm in ('l1', 'l2'):
-            raise NotImplementedError("return_norm=True is not implemented "
-                                      "for sparse matrices with norm 'l1' "
-                                      "or norm 'l2'")
-        if norm == 'l1':
-            inplace_csr_row_normalize_l1(X)
-        elif norm == 'l2':
-            inplace_csr_row_normalize_l2(X)
-        elif norm == 'max':
-            _, norms = min_max_axis(X, 1)
-            norms_elementwise = norms.repeat(np.diff(X.indptr))
-            mask = norms_elementwise != 0
-            X.data[mask] /= norms_elementwise[mask]
-    else:
-        if norm == 'l1':
-            norms = np.abs(X).sum(axis=1)
-        elif norm == 'l2':
-            norms = row_norms(X)
-        elif norm == 'max':
-            norms = np.max(X, axis=1)
-        norms = _handle_zeros_in_scale(norms, copy=False)
-        X /= norms[:, np.newaxis]
+    if norm == "l1":
+        norms = np.abs(X).sum(axis=1)
+    elif norm == "l2":
+        norms = row_norms(X)
+    elif norm == "max":
+        norms = np.max(X, axis=1)
+    norms = _handle_zeros_in_scale(norms, copy=False)
+    X /= norms[:, np.newaxis]
 
     if axis == 0:
         X = X.T
@@ -108,14 +96,14 @@ def normalize(X, norm='l2', axis=1, copy=True, return_norm=False):
 
 
 def _handle_zeros_in_scale(scale, copy=True):
-    ''' Makes sure that whenever scale is zero, we handle it correctly.
+    """Makes sure that whenever scale is zero, we handle it correctly.
 
-    This happens in most scalers when we have constant features.'''
+    This happens in most scalers when we have constant features."""
 
     # if we are fitting on 1D arrays, scale might be a scalar
     if np.isscalar(scale):
-        if scale == .0:
-            scale = 1.
+        if scale == 0.0:
+            scale = 1.0
         return scale
     elif isinstance(scale, np.ndarray):
         if copy:

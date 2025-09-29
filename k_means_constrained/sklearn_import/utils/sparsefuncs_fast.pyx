@@ -12,7 +12,6 @@
 from libc.math cimport fabs, sqrt, pow
 cimport numpy as np
 import numpy as np
-import scipy.sparse as sp
 cimport cython
 from cython cimport floating
 

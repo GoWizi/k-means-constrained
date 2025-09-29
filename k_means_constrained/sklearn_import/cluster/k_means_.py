@@ -14,14 +14,23 @@
 import warnings
 
 import numpy as np
-import scipy.sparse as sp
-from k_means_constrained.sklearn_import.base import BaseEstimator, ClusterMixin, TransformerMixin
+from k_means_constrained.sklearn_import.base import (
+    BaseEstimator,
+    ClusterMixin,
+    TransformerMixin,
+)
 from six import string_types
-from k_means_constrained.sklearn_import.metrics.pairwise import euclidean_distances, pairwise_distances_argmin_min
-from k_means_constrained.sklearn_import.utils.validation import check_array, check_random_state, FLOAT_DTYPES, \
-    check_is_fitted
+from k_means_constrained.sklearn_import.metrics.pairwise import (
+    euclidean_distances,
+    pairwise_distances_argmin_min,
+)
+from k_means_constrained.sklearn_import.utils.validation import (
+    check_array,
+    check_random_state,
+    FLOAT_DTYPES,
+    check_is_fitted,
+)
 from k_means_constrained.sklearn_import.utils.extmath import row_norms, stable_cumsum
-from k_means_constrained.sklearn_import.utils.sparsefuncs import mean_variance_axis
 
 from k_means_constrained.sklearn_import.cluster import _k_means
 
@@ -68,7 +77,7 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
 
     centers = np.empty((n_clusters, n_features), dtype=X.dtype)
 
-    assert x_squared_norms is not None, 'x_squared_norms None in _k_init'
+    assert x_squared_norms is not None, "x_squared_norms None in _k_init"
 
     # Set the number of local seeding trials if none is given
     if n_local_trials is None:
@@ -86,8 +95,8 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
 
     # Initialize list of closest distances and calculate current potential
     closest_dist_sq = euclidean_distances(
-        centers[0, np.newaxis], X, Y_norm_squared=x_squared_norms,
-        squared=True)
+        centers[0, np.newaxis], X, Y_norm_squared=x_squared_norms, squared=True
+    )
     current_pot = closest_dist_sq.sum()
 
     # Pick the remaining n_clusters-1 points
@@ -95,12 +104,12 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
         # Choose center candidates by sampling with probability proportional
         # to the squared distance to the closest existing center
         rand_vals = random_state.random_sample(n_local_trials) * current_pot
-        candidate_ids = np.searchsorted(stable_cumsum(closest_dist_sq),
-                                        rand_vals)
+        candidate_ids = np.searchsorted(stable_cumsum(closest_dist_sq), rand_vals)
 
         # Compute distances to center candidates
         distance_to_candidates = euclidean_distances(
-            X[candidate_ids], X, Y_norm_squared=x_squared_norms, squared=True)
+            X[candidate_ids], X, Y_norm_squared=x_squared_norms, squared=True
+        )
 
         # Decide which candidate is the best
         best_candidate = None
@@ -108,8 +117,7 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
         best_dist_sq = None
         for trial in range(n_local_trials):
             # Compute potential when including center candidate
-            new_dist_sq = np.minimum(closest_dist_sq,
-                                     distance_to_candidates[trial])
+            new_dist_sq = np.minimum(closest_dist_sq, distance_to_candidates[trial])
             new_pot = new_dist_sq.sum()
 
             # Store result if it is the best local trial so far
@@ -132,25 +140,25 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
 ###############################################################################
 # K-means batch estimation by EM (expectation maximization)
 
+
 def _validate_center_shape(X, n_centers, centers):
     """Check if centers is compatible with X and n_centers"""
     if len(centers) != n_centers:
-        raise ValueError('The shape of the initial centers (%s) '
-                         'does not match the number of clusters %i'
-                         % (centers.shape, n_centers))
+        raise ValueError(
+            "The shape of the initial centers (%s) "
+            "does not match the number of clusters %i" % (centers.shape, n_centers)
+        )
     if centers.shape[1] != X.shape[1]:
         raise ValueError(
             "The number of features of the initial centers %s "
             "does not match the number of features of the data %s."
-            % (centers.shape[1], X.shape[1]))
+            % (centers.shape[1], X.shape[1])
+        )
 
 
 def _tolerance(X, tol):
     """Return a tolerance which is independent of the dataset"""
-    if sp.issparse(X):
-        variances = mean_variance_axis(X, axis=0)[1]
-    else:
-        variances = np.var(X, axis=0)
+    variances = np.var(X, axis=0)
     return np.mean(variances) * tol
 
 
@@ -188,7 +196,8 @@ def _labels_inertia_precompute_dense(X, x_squared_norms, centers, distances):
     # memory blowup in the case of a large number of samples and clusters.
     # TODO: Once PR #7383 is merged use check_inputs=False in metric_kwargs.
     labels, mindist = pairwise_distances_argmin_min(
-        X=X, Y=centers, metric='euclidean', metric_kwargs={'squared': True})
+        X=X, Y=centers, metric="euclidean", metric_kwargs={"squared": True}
+    )
     # cython k-means code assumes int32 inputs
     labels = labels.astype(np.int32)
     if n_samples == distances.shape[0]:
@@ -198,8 +207,9 @@ def _labels_inertia_precompute_dense(X, x_squared_norms, centers, distances):
     return labels, inertia
 
 
-def _labels_inertia(X, x_squared_norms, centers,
-                    precompute_distances=True, distances=None):
+def _labels_inertia(
+    X, x_squared_norms, centers, precompute_distances=True, distances=None
+):
     """E step of the K-means EM algorithm.
 
     Compute the labels and the inertia of the given samples and centers.
@@ -241,18 +251,22 @@ def _labels_inertia(X, x_squared_norms, centers,
     # distances will be changed in-place
     if sp.issparse(X):
         inertia = _k_means._assign_labels_csr(
-            X, x_squared_norms, centers, labels, distances=distances)
+            X, x_squared_norms, centers, labels, distances=distances
+        )
     else:
         if precompute_distances:
-            return _labels_inertia_precompute_dense(X, x_squared_norms,
-                                                    centers, distances)
+            return _labels_inertia_precompute_dense(
+                X, x_squared_norms, centers, distances
+            )
         inertia = _k_means._assign_labels_array(
-            X, x_squared_norms, centers, labels, distances=distances)
+            X, x_squared_norms, centers, labels, distances=distances
+        )
     return labels, inertia
 
 
-def _init_centroids(X, k, init, random_state=None, x_squared_norms=None,
-                    init_size=None):
+def _init_centroids(
+    X, k, init, random_state=None, x_squared_norms=None, init_size=None
+):
     """Compute the initial centroids
 
     Parameters
@@ -297,23 +311,25 @@ def _init_centroids(X, k, init, random_state=None, x_squared_norms=None,
             warnings.warn(
                 "init_size=%d should be larger than k=%d. "
                 "Setting it to 3*k" % (init_size, k),
-                RuntimeWarning, stacklevel=2)
+                RuntimeWarning,
+                stacklevel=2,
+            )
             init_size = 3 * k
         init_indices = random_state.randint(0, n_samples, init_size)
         X = X[init_indices]
         x_squared_norms = x_squared_norms[init_indices]
         n_samples = X.shape[0]
     elif n_samples < k:
-        raise ValueError(
-            "n_samples=%d should be larger than k=%d" % (n_samples, k))
+        raise ValueError("n_samples=%d should be larger than k=%d" % (n_samples, k))
 
-    if isinstance(init, string_types) and init == 'k-means++':
-        centers = _k_init(X, k, random_state=random_state,
-                          x_squared_norms=x_squared_norms)
-    elif isinstance(init, string_types) and init == 'random':
+    if isinstance(init, string_types) and init == "k-means++":
+        centers = _k_init(
+            X, k, random_state=random_state, x_squared_norms=x_squared_norms
+        )
+    elif isinstance(init, string_types) and init == "random":
         seeds = random_state.permutation(n_samples)[:k]
         centers = X[seeds]
-    elif hasattr(init, '__array__'):
+    elif hasattr(init, "__array__"):
         # ensure that the centers have the same dtype as X
         # this is a requirement of fused types of cython
         centers = np.array(init, dtype=X.dtype)
@@ -321,9 +337,11 @@ def _init_centroids(X, k, init, random_state=None, x_squared_norms=None,
         centers = init(X, k, random_state=random_state)
         centers = np.asarray(centers, dtype=X.dtype)
     else:
-        raise ValueError("the init parameter for the k-means should "
-                         "be 'k-means++' or 'random' or an ndarray, "
-                         "'%s' (type '%s') was passed." % (init, type(init)))
+        raise ValueError(
+            "the init parameter for the k-means should "
+            "be 'k-means++' or 'random' or an ndarray, "
+            "'%s' (type '%s') was passed." % (init, type(init))
+        )
 
     if sp.issparse(centers):
         centers = centers.toarray()
@@ -464,10 +482,20 @@ class KMeans(BaseEstimator, ClusterMixin, TransformerMixin):
 
     """
 
-    def __init__(self, n_clusters=8, init='k-means++', n_init=10,
-                 max_iter=300, tol=1e-4, precompute_distances='auto',
-                 verbose=0, random_state=None, copy_x=True,
-                 n_jobs=1, algorithm='auto'):
+    def __init__(
+        self,
+        n_clusters=8,
+        init="k-means++",
+        n_init=10,
+        max_iter=300,
+        tol=1e-4,
+        precompute_distances="auto",
+        verbose=0,
+        random_state=None,
+        copy_x=True,
+        n_jobs=1,
+        algorithm="auto",
+    ):
 
         self.n_clusters = n_clusters
         self.init = init
@@ -483,20 +511,23 @@ class KMeans(BaseEstimator, ClusterMixin, TransformerMixin):
 
     def _check_fit_data(self, X):
         """Verify that the number of samples given is larger than k"""
-        X = check_array(X, accept_sparse='csr', dtype=[np.float64, np.float32])
+        X = check_array(X, accept_sparse="csr", dtype=[np.float64, np.float32])
         if X.shape[0] < self.n_clusters:
-            raise ValueError("n_samples=%d should be >= n_clusters=%d" % (
-                X.shape[0], self.n_clusters))
+            raise ValueError(
+                "n_samples=%d should be >= n_clusters=%d"
+                % (X.shape[0], self.n_clusters)
+            )
         return X
 
     def _check_test_data(self, X):
-        X = check_array(X, accept_sparse='csr', dtype=FLOAT_DTYPES)
+        X = check_array(X, accept_sparse="csr", dtype=FLOAT_DTYPES)
         n_samples, n_features = X.shape
         expected_n_features = self.cluster_centers_.shape[1]
         if not n_features == expected_n_features:
-            raise ValueError("Incorrect number of features. "
-                             "Got %d features, expected %d" % (
-                                 n_features, expected_n_features))
+            raise ValueError(
+                "Incorrect number of features. "
+                "Got %d features, expected %d" % (n_features, expected_n_features)
+            )
 
         return X
 
@@ -568,7 +599,7 @@ class KMeans(BaseEstimator, ClusterMixin, TransformerMixin):
         X_new : array, shape [n_samples, k]
             X transformed in the new space.
         """
-        check_is_fitted(self, 'cluster_centers_')
+        check_is_fitted(self, "cluster_centers_")
 
         X = self._check_test_data(X)
         return self._transform(X)
@@ -594,7 +625,7 @@ class KMeans(BaseEstimator, ClusterMixin, TransformerMixin):
         labels : array, shape [n_samples,]
             Index of the cluster each sample belongs to.
         """
-        check_is_fitted(self, 'cluster_centers_')
+        check_is_fitted(self, "cluster_centers_")
 
         X = self._check_test_data(X)
         x_squared_norms = row_norms(X, squared=True)
@@ -613,10 +644,8 @@ class KMeans(BaseEstimator, ClusterMixin, TransformerMixin):
         score : float
             Opposite of the value of X on the K-means objective.
         """
-        check_is_fitted(self, 'cluster_centers_')
+        check_is_fitted(self, "cluster_centers_")
 
         X = self._check_test_data(X)
         x_squared_norms = row_norms(X, squared=True)
         return -_labels_inertia(X, x_squared_norms, self.cluster_centers_)[1]
-
-

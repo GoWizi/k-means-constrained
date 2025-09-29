@@ -3,12 +3,16 @@
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.sparse import csc_matrix, issparse
 
 from k_means_constrained.sklearn_import.metrics.pairwise import euclidean_distances
 
-from k_means_constrained.k_means_constrained_ import minimum_cost_flow_problem_graph, solve_min_cost_flow_graph, \
-    KMeansConstrained, _labels_constrained
+from k_means_constrained.k_means_constrained_ import (
+    minimum_cost_flow_problem_graph,
+    solve_min_cost_flow_graph,
+    KMeansConstrained,
+    _labels_constrained,
+)
+
 
 def sort_coordinates(array):
     array = array[np.lexsort(np.fliplr(array).T)]
@@ -17,25 +21,15 @@ def sort_coordinates(array):
 
 def test_minimum_cost_flow_problem_graph():
     # Setup graph
-    X = np.array([
-        [0, 0],
-        [1, 2],
-        [1, 4],
-        [1, 0],
-        [4, 2],
-        [4, 4],
-        [4, 0],
-        [4, 4]
-    ])
-    C = np.array([
-        [0, 0],
-        [4, 4]
-    ])
+    X = np.array([[0, 0], [1, 2], [1, 4], [1, 0], [4, 2], [4, 4], [4, 0], [4, 4]])
+    C = np.array([[0, 0], [4, 4]])
     size_min, size_max = 3, 10
 
     D = euclidean_distances(X, C, squared=True)
 
-    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(X, C, D, size_min, size_max)
+    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(
+        X, C, D, size_min, size_max
+    )
 
     assert edges.shape[0] == len(costs)
     assert edges.shape[0] == len(capacities)
@@ -46,25 +40,15 @@ def test_minimum_cost_flow_problem_graph():
 
 def test_solve_min_cost_flow_graph():
     # Setup graph
-    X = np.array([
-        [0, 0],
-        [1, 2],
-        [1, 4],
-        [1, 0],
-        [4, 2],
-        [4, 4],
-        [4, 0],
-        [4, 4]
-    ])
-    C = np.array([
-        [0, 0],
-        [4, 4]
-    ])
+    X = np.array([[0, 0], [1, 2], [1, 4], [1, 0], [4, 2], [4, 4], [4, 0], [4, 4]])
+    C = np.array([[0, 0], [4, 4]])
     size_min, size_max = 3, 10
 
     D = euclidean_distances(X, C, squared=True)
 
-    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(X, C, D, size_min, size_max)
+    edges, costs, capacities, supplies, n_C, n_X = minimum_cost_flow_problem_graph(
+        X, C, D, size_min, size_max
+    )
     labels = solve_min_cost_flow_graph(edges, costs, capacities, supplies, n_C, n_X)
 
     cluster_size = pd.Series(labels).value_counts()
@@ -75,20 +59,8 @@ def test_solve_min_cost_flow_graph():
 
 def test__labels_constrained():
     # Setup graph
-    X = np.array([
-        [0, 0],
-        [1, 2],
-        [1, 4],
-        [1, 0],
-        [4, 2],
-        [4, 4],
-        [4, 0],
-        [4, 4]
-    ])
-    centers = np.array([
-        [0, 0],
-        [4, 4]
-    ])
+    X = np.array([[0, 0], [1, 2], [1, 4], [1, 0], [4, 2], [4, 4], [4, 0], [4, 4]])
+    centers = np.array([[0, 0], [4, 4]])
     size_min, size_max = 3, 10
 
     distances = np.zeros(shape=(X.shape[0],), dtype=X.dtype)
@@ -106,27 +78,16 @@ def test__labels_constrained():
     # Inertia
     assert inertia > 0
 
+
 def test_KMeansConstrained():
-    X = np.array([
-        [0, 0],
-        [1, 2],
-        [1, 4],
-        [1, 0],
-        [4, 2],
-        [4, 4],
-        [4, 0],
-        [3, 0],
-        [4, 4]
-    ])
+    X = np.array(
+        [[0, 0], [1, 2], [1, 4], [1, 0], [4, 2], [4, 4], [4, 0], [3, 0], [4, 4]]
+    )
 
     k = 3
     size_min, size_max = 3, 7
 
-    clf = KMeansConstrained(
-        n_clusters=k,
-        size_min=size_min,
-        size_max=size_max
-    )
+    clf = KMeansConstrained(n_clusters=k, size_min=size_min, size_max=size_max)
 
     y = clf.fit_predict(X)
 
@@ -137,25 +98,26 @@ def test_KMeansConstrained():
 
 
 def test_KMeansConstrained_predict_method():
-    X = np.array([
-        [0, 0],
-        [0, 0],
-        [0, 0],
-        [1, 1],
-    ])
+    X = np.array(
+        [
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [1, 1],
+        ]
+    )
 
     k = 2
     size_max = 2
 
-    clf = KMeansConstrained(
-        n_clusters=k,
-        size_max=size_max
-    )
+    clf = KMeansConstrained(n_clusters=k, size_max=size_max)
 
     clf.fit(X)
 
     y_constrained = clf.predict(X)  # Expected np.array([0, 0, 1, 1])
-    y_normal = super(KMeansConstrained, clf).predict(X)  # Expected np.array([0, 0, 0, 1])
+    y_normal = super(KMeansConstrained, clf).predict(
+        X
+    )  # Expected np.array([0, 0, 0, 1])
 
     cluster_size_constrained = pd.Series(y_constrained).value_counts()
     assert (cluster_size_constrained > size_max).any() == False
@@ -165,36 +127,6 @@ def test_KMeansConstrained_predict_method():
     assert (cluster_size_normal > size_max).any() == True
     assert len(cluster_size_normal) == k
 
-
-def test_spare_not_implemented():
-    X = np.array([
-        [0, 0],
-        [1, 2],
-        [1, 4],
-        [1, 0],
-        [4, 2],
-        [4, 4],
-        [4, 0],
-        [3, 0],
-        [4, 4]
-    ])
-
-    k = 3
-    size_min, size_max = 3, 7
-
-    clf = KMeansConstrained(
-        n_clusters=k,
-        size_min=size_min,
-        size_max=size_max
-    )
-
-    X = csc_matrix(X)
-
-    with pytest.raises(NotImplementedError):
-        clf.fit(X)
-
-    with pytest.raises(NotImplementedError):
-        clf.fit_predict(X)
 
 #######
 # Parity tests only works with sklearn v0.19.2 but does not run on Python 3.8+

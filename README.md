@@ -4,6 +4,7 @@
 [**Documentation**](https://joshlk.github.io/k-means-constrained/)
 
 # k-means-constrained
+
 K-means clustering implementation whereby a minimum and/or maximum size for each
 cluster can be specified.
 
@@ -17,17 +18,19 @@ which is a fast C++ implementation.
 This package is inspired by [Bradley et al.](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2000-65.pdf).
 The original Minimum Cost Flow (MCF) network proposed by Bradley et al.
 has been modified so maximum cluster sizes can also be specified along
-with minimum cluster size. 
+with minimum cluster size.
 
 The code is based on [scikit-lean's `KMeans`](https://scikit-learn.org/0.19/modules/generated/sklearn.cluster.KMeans.html)
 and implements the same [API with modifications](https://joshlk.github.io/k-means-constrained/).
 
 Ref:
+
 1. [Bradley, P. S., K. P. Bennett, and Ayhan Demiriz. "Constrained k-means clustering."
-    Microsoft Research, Redmond (2000): 1-8.](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2000-65.pdf)
+   Microsoft Research, Redmond (2000): 1-8.](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2000-65.pdf)
 2. [Google's SimpleMinCostFlow C++ implementation](https://github.com/google/or-tools/blob/master/ortools/graph/min_cost_flow.h)
 
 # Installation
+
 You can install the k-means-constrained from PyPI:
 
 ```
@@ -86,14 +89,16 @@ clf.labels_
 k-means-constrained is a more complex algorithm than vanilla k-means and therefore will take longer to execute and has worse scaling characteristics.
 
 Given a number of data points $n$ and clusters $c$, the time complexity of:
-* k-means: $\mathcal{O}(nc)$
-* k-means-constrained<sup>1</sup>: $\mathcal{O}((n^3c+n^2c^2+nc^3)\log(n+c)))$
+
+- k-means: $\mathcal{O}(nc)$
+- k-means-constrained<sup>1</sup>: $\mathcal{O}((n^3c+n^2c^2+nc^3)\log(n+c)))$
 
 This assumes a constant number of algorithm iterations and data-point features/dimensions.
 
 If you consider the case where $n$ is the same order as $c$ ($n \backsim c$) then:
-* k-means: $\mathcal{O}(n^2)$
-* k-means-constrained<sup>1</sup>: $\mathcal{O}(n^4\log(n)))$
+
+- k-means: $\mathcal{O}(n^2)$
+- k-means-constrained<sup>1</sup>: $\mathcal{O}(n^4\log(n)))$
 
 Below is a runtime comparison between k-means and k-means-constrained whereby the number of iterations, initializations, multi-process pool size and dimension size are fixed. The number of clusters is also always one-tenth the number of data points $n=10c$. It is shown above that the runtime is independent of the minimum or maximum cluster size, and so none is included below.
 
@@ -109,7 +114,6 @@ Below is a runtime comparison between k-means and k-means-constrained whereby th
 * CPU cores: 120
 * k-means-constrained version: 0.7.3
 * numpy version: 1.24.2
-* scipy version: 1.11.1
 * ortools version: 9.6.2534
 * joblib version: 1.3.1
 * sklearn version: 1.3.0

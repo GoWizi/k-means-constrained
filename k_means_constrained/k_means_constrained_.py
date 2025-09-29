@@ -15,14 +15,12 @@
 import warnings
 
 import numpy as np
-import scipy.sparse as sp
 from joblib import Parallel, delayed
 from ortools.graph.pywrapgraph import SimpleMinCostFlow
 
 # Internal scikit learn methods imported into this project
 from k_means_constrained.sklearn_import.cluster._k_means import (
     _centers_dense,
-    _centers_sparse,
 )
 from k_means_constrained.sklearn_import.cluster.k_means_ import (
     KMeans,
@@ -441,10 +439,7 @@ def kmeans_constrained_single(
         )
 
         # computation of the means is also called the M-step of EM
-        if sp.issparse(X):
-            centers = _centers_sparse(X, labels, n_clusters, distances)
-        else:
-            centers = _centers_dense(X, labels, n_clusters, distances)
+        centers = _centers_dense(X, labels, n_clusters, distances)
 
         if verbose:
             print("Iteration %2d, inertia %.3f" % (i, inertia))

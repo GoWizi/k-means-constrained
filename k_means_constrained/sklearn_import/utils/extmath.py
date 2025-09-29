@@ -1,8 +1,6 @@
 import warnings
 
 import numpy as np
-from scipy.sparse import issparse, csr_matrix
-from k_means_constrained.sklearn_import.utils.sparsefuncs_fast import csr_row_norms
 
 from k_means_constrained.sklearn_import.utils.fixes import np_version
 
@@ -15,12 +13,7 @@ def row_norms(X, squared=False):
 
     Performs no input validation.
     """
-    if issparse(X):
-        if not isinstance(X, csr_matrix):
-            X = csr_matrix(X)
-        norms = csr_row_norms(X)
-    else:
-        norms = np.einsum('ij,ij->i', X, X)
+    norms = np.einsum("ij,ij->i", X, X)
 
     if not squared:
         np.sqrt(norms, norms)
@@ -33,11 +26,13 @@ def squared_norm(x):
     Returns the Euclidean norm when x is a vector, the Frobenius norm when x
     is a matrix (2-d array). Faster than norm(x) ** 2.
     """
-    x = np.ravel(x, order='K')
+    x = np.ravel(x, order="K")
     if np.issubdtype(x.dtype, np.integer):
-        warnings.warn('Array type is integer, np.dot may overflow. '
-                      'Data should be float type to avoid this issue',
-                      UserWarning)
+        warnings.warn(
+            "Array type is integer, np.dot may overflow. "
+            "Data should be float type to avoid this issue",
+            UserWarning,
+        )
     return np.dot(x, x)
 
 
@@ -111,11 +106,16 @@ def stable_cumsum(arr, axis=None, rtol=1e-05, atol=1e-08):
 
     out = np.cumsum(arr, axis=axis, dtype=np.float64)
     expected = np.sum(arr, axis=axis, dtype=np.float64)
-    if not np.all(np.isclose(out.take(-1, axis=axis), expected, rtol=rtol,
-                             atol=atol, equal_nan=True)):
-        warnings.warn('cumsum was found to be unstable: '
-                      'its last element does not correspond to sum',
-                      RuntimeWarning)
+    if not np.all(
+        np.isclose(
+            out.take(-1, axis=axis), expected, rtol=rtol, atol=atol, equal_nan=True
+        )
+    ):
+        warnings.warn(
+            "cumsum was found to be unstable: "
+            "its last element does not correspond to sum",
+            RuntimeWarning,
+        )
     return out
 
 
@@ -138,10 +138,4 @@ def safe_sparse_dot(a, b, dense_output=False):
     dot_product : array or sparse matrix
         sparse if ``a`` or ``b`` is sparse and ``dense_output=False``.
     """
-    if issparse(a) or issparse(b):
-        ret = a * b
-        if dense_output and hasattr(ret, "toarray"):
-            ret = ret.toarray()
-        return ret
-    else:
-        return np.dot(a, b)
+    return np.dot(a, b)

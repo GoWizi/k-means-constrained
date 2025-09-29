@@ -2,7 +2,6 @@ import numbers
 import warnings
 
 import numpy as np
-from scipy import sparse as sp
 from k_means_constrained.sklearn_import.exceptions import NotFittedError
 
 from k_means_constrained.sklearn_import import get_config as _get_config
@@ -11,10 +10,20 @@ from k_means_constrained.sklearn_import.exceptions import DataConversionWarning
 import six
 
 
-def check_array(array, accept_sparse=False, dtype="numeric", order=None,
-                copy=False, force_all_finite=True, ensure_2d=True,
-                allow_nd=False, ensure_min_samples=1, ensure_min_features=1,
-                warn_on_dtype=False, estimator=None):
+def check_array(
+    array,
+    accept_sparse=False,
+    dtype="numeric",
+    order=None,
+    copy=False,
+    force_all_finite=True,
+    ensure_2d=True,
+    allow_nd=False,
+    ensure_min_samples=1,
+    ensure_min_features=1,
+    warn_on_dtype=False,
+    estimator=None,
+):
     """Input validation on an array, list, sparse matrix or similar.
 
     By default, the input is converted to an at least 2D numpy array.
@@ -94,14 +103,16 @@ def check_array(array, accept_sparse=False, dtype="numeric", order=None,
             "Passing 'None' to parameter 'accept_sparse' in methods "
             "check_array and check_X_y is deprecated in version 0.19 "
             "and will be removed in 0.21. Use 'accept_sparse=False' "
-            " instead.", DeprecationWarning)
+            " instead.",
+            DeprecationWarning,
+        )
         accept_sparse = False
 
     # store whether originally we wanted numeric dtype
     dtype_numeric = isinstance(dtype, six.string_types) and dtype == "numeric"
 
     dtype_orig = getattr(array, "dtype", None)
-    if not hasattr(dtype_orig, 'kind'):
+    if not hasattr(dtype_orig, "kind"):
         # not a data type (e.g. a column named dtype in a pandas DataFrame)
         dtype_orig = None
 
@@ -130,52 +141,55 @@ def check_array(array, accept_sparse=False, dtype="numeric", order=None,
         estimator_name = "Estimator"
     context = " by %s" % estimator_name if estimator is not None else ""
 
-    if sp.issparse(array):
-        array = _ensure_sparse_format(array, accept_sparse, dtype, copy,
-                                      force_all_finite)
-    else:
+    array = np.array(array, dtype=dtype, order=order, copy=copy)
+
+    if ensure_2d:
+        if array.ndim == 1:
+            raise ValueError(
+                "Expected 2D array, got 1D array instead:\narray={}.\n"
+                "Reshape your data either using array.reshape(-1, 1) if "
+                "your data has a single feature or array.reshape(1, -1) "
+                "if it contains a single sample.".format(array)
+            )
+        array = np.atleast_2d(array)
+        # To ensure that array flags are maintained
         array = np.array(array, dtype=dtype, order=order, copy=copy)
 
-        if ensure_2d:
-            if array.ndim == 1:
-                raise ValueError(
-                    "Expected 2D array, got 1D array instead:\narray={}.\n"
-                    "Reshape your data either using array.reshape(-1, 1) if "
-                    "your data has a single feature or array.reshape(1, -1) "
-                    "if it contains a single sample.".format(array))
-            array = np.atleast_2d(array)
-            # To ensure that array flags are maintained
-            array = np.array(array, dtype=dtype, order=order, copy=copy)
-
-        # make sure we actually converted to numeric:
-        if dtype_numeric and array.dtype.kind == "O":
-            array = array.astype(np.float64)
-        if not allow_nd and array.ndim >= 3:
-            raise ValueError("Found array with dim %d. %s expected <= 2."
-                             % (array.ndim, estimator_name))
-        if force_all_finite:
-            _assert_all_finite(array)
+    # make sure we actually converted to numeric:
+    if dtype_numeric and array.dtype.kind == "O":
+        array = array.astype(np.float64)
+    if not allow_nd and array.ndim >= 3:
+        raise ValueError(
+            "Found array with dim %d. %s expected <= 2." % (array.ndim, estimator_name)
+        )
+    if force_all_finite:
+        _assert_all_finite(array)
 
     shape_repr = _shape_repr(array.shape)
     if ensure_min_samples > 0:
         n_samples = _num_samples(array)
         if n_samples < ensure_min_samples:
-            raise ValueError("Found array with %d sample(s) (shape=%s) while a"
-                             " minimum of %d is required%s."
-                             % (n_samples, shape_repr, ensure_min_samples,
-                                context))
+            raise ValueError(
+                "Found array with %d sample(s) (shape=%s) while a"
+                " minimum of %d is required%s."
+                % (n_samples, shape_repr, ensure_min_samples, context)
+            )
 
     if ensure_min_features > 0 and array.ndim == 2:
         n_features = array.shape[1]
         if n_features < ensure_min_features:
-            raise ValueError("Found array with %d feature(s) (shape=%s) while"
-                             " a minimum of %d is required%s."
-                             % (n_features, shape_repr, ensure_min_features,
-                                context))
+            raise ValueError(
+                "Found array with %d feature(s) (shape=%s) while"
+                " a minimum of %d is required%s."
+                % (n_features, shape_repr, ensure_min_features, context)
+            )
 
     if warn_on_dtype and dtype_orig is not None and array.dtype != dtype_orig:
-        msg = ("Data with input dtype %s was converted to %s%s."
-               % (dtype_orig, array.dtype, context))
+        msg = "Data with input dtype %s was converted to %s%s." % (
+            dtype_orig,
+            array.dtype,
+            context,
+        )
         warnings.warn(msg, DataConversionWarning)
     return array
 
@@ -197,8 +211,9 @@ def check_random_state(seed):
         return np.random.RandomState(seed)
     if isinstance(seed, np.random.RandomState):
         return seed
-    raise ValueError('%r cannot be used to seed a numpy.random.RandomState'
-                     ' instance' % seed)
+    raise ValueError(
+        "%r cannot be used to seed a numpy.random.RandomState" " instance" % seed
+    )
 
 
 def as_float_array(X, copy=True, force_all_finite=True):
@@ -224,17 +239,19 @@ def as_float_array(X, copy=True, force_all_finite=True):
     XT : {array, sparse matrix}
         An array of type np.float
     """
-    if isinstance(X, np.matrix) or (not isinstance(X, np.ndarray)
-                                    and not sp.issparse(X)):
-        return check_array(X, ['csr', 'csc', 'coo'], dtype=np.float64,
-                           copy=copy, force_all_finite=force_all_finite,
-                           ensure_2d=False)
-    elif sp.issparse(X) and X.dtype in [np.float32, np.float64]:
-        return X.copy() if copy else X
+    if isinstance(X, np.matrix) or (not isinstance(X, np.ndarray)):
+        return check_array(
+            X,
+            ["csr", "csc", "coo"],
+            dtype=np.float64,
+            copy=copy,
+            force_all_finite=force_all_finite,
+            ensure_2d=False,
+        )
     elif X.dtype in [np.float32, np.float64]:  # is numpy array
-        return X.copy('F' if X.flags['F_CONTIGUOUS'] else 'C') if copy else X
+        return X.copy("F" if X.flags["F_CONTIGUOUS"] else "C") if copy else X
     else:
-        if X.dtype.kind in 'uib' and X.dtype.itemsize <= 4:
+        if X.dtype.kind in "uib" and X.dtype.itemsize <= 4:
             return_dtype = np.float32
         else:
             return_dtype = np.float64
@@ -243,34 +260,37 @@ def as_float_array(X, copy=True, force_all_finite=True):
 
 def _assert_all_finite(X):
     """Like assert_all_finite, but only for ndarray."""
-    if _get_config()['assume_finite']:
+    if _get_config()["assume_finite"]:
         return
     X = np.asanyarray(X)
     # First try an O(n) time, O(1) space solution for the common case that
     # everything is finite; fall back to O(n) space np.isfinite to prevent
     # false positives from overflow in sum method.
-    if (X.dtype.char in np.typecodes['AllFloat'] and not np.isfinite(X.sum())
-            and not np.isfinite(X).all()):
-        raise ValueError("Input contains NaN, infinity"
-                         " or a value too large for %r." % X.dtype)
+    if (
+        X.dtype.char in np.typecodes["AllFloat"]
+        and not np.isfinite(X.sum())
+        and not np.isfinite(X).all()
+    ):
+        raise ValueError(
+            "Input contains NaN, infinity" " or a value too large for %r." % X.dtype
+        )
 
 
 def _num_samples(x):
     """Return number of samples in array-like x."""
-    if hasattr(x, 'fit') and callable(x.fit):
+    if hasattr(x, "fit") and callable(x.fit):
         # Don't get num_samples from an ensembles length!
-        raise TypeError('Expected sequence or array-like, got '
-                        'estimator %s' % x)
-    if not hasattr(x, '__len__') and not hasattr(x, 'shape'):
-        if hasattr(x, '__array__'):
+        raise TypeError("Expected sequence or array-like, got " "estimator %s" % x)
+    if not hasattr(x, "__len__") and not hasattr(x, "shape"):
+        if hasattr(x, "__array__"):
             x = np.asarray(x)
         else:
-            raise TypeError("Expected sequence or array-like, got %s" %
-                            type(x))
-    if hasattr(x, 'shape'):
+            raise TypeError("Expected sequence or array-like, got %s" % type(x))
+    if hasattr(x, "shape"):
         if len(x.shape) == 0:
-            raise TypeError("Singleton array %r cannot be considered"
-                            " a valid collection." % x)
+            raise TypeError(
+                "Singleton array %r cannot be considered" " a valid collection." % x
+            )
         return x.shape[0]
     else:
         return len(x)
@@ -306,12 +326,11 @@ def _shape_repr(shape):
     joined = ", ".join("%d" % e for e in shape)
     if len(shape) == 1:
         # special notation for singleton tuples
-        joined += ','
+        joined += ","
     return "(%s)" % joined
 
 
-def _ensure_sparse_format(spmatrix, accept_sparse, dtype, copy,
-                          force_all_finite):
+def _ensure_sparse_format(spmatrix, accept_sparse, dtype, copy, force_all_finite):
     """Convert a sparse matrix to a given format.
 
     Checks the sparse format of spmatrix and converts if necessary.
@@ -352,14 +371,18 @@ def _ensure_sparse_format(spmatrix, accept_sparse, dtype, copy,
         accept_sparse = [accept_sparse]
 
     if accept_sparse is False:
-        raise TypeError('A sparse matrix was passed, but dense '
-                        'data is required. Use X.toarray() to '
-                        'convert to a dense numpy array.')
+        raise TypeError(
+            "A sparse matrix was passed, but dense "
+            "data is required. Use X.toarray() to "
+            "convert to a dense numpy array."
+        )
     elif isinstance(accept_sparse, (list, tuple)):
         if len(accept_sparse) == 0:
-            raise ValueError("When providing 'accept_sparse' "
-                             "as a tuple or list, it must contain at "
-                             "least one string value.")
+            raise ValueError(
+                "When providing 'accept_sparse' "
+                "as a tuple or list, it must contain at "
+                "least one string value."
+            )
         # ensure correct sparse format
         if spmatrix.format not in accept_sparse:
             # create new with correct sparse
@@ -367,9 +390,11 @@ def _ensure_sparse_format(spmatrix, accept_sparse, dtype, copy,
             changed_format = True
     elif accept_sparse is not True:
         # any other type
-        raise ValueError("Parameter 'accept_sparse' should be a string, "
-                         "boolean or list of strings. You provided "
-                         "'accept_sparse={}'.".format(accept_sparse))
+        raise ValueError(
+            "Parameter 'accept_sparse' should be a string, "
+            "boolean or list of strings. You provided "
+            "'accept_sparse={}'.".format(accept_sparse)
+        )
 
     if dtype != spmatrix.dtype:
         # convert dtype
@@ -380,8 +405,9 @@ def _ensure_sparse_format(spmatrix, accept_sparse, dtype, copy,
 
     if force_all_finite:
         if not hasattr(spmatrix, "data"):
-            warnings.warn("Can't check %s sparse matrix for nan or inf."
-                          % spmatrix.format)
+            warnings.warn(
+                "Can't check %s sparse matrix for nan or inf." % spmatrix.format
+            )
         else:
             _assert_all_finite(spmatrix.data)
     return spmatrix
@@ -428,14 +454,16 @@ def check_is_fitted(estimator, attributes, msg=None, all_or_any=all):
         If the attributes are not found.
     """
     if msg is None:
-        msg = ("This %(name)s instance is not fitted yet. Call 'fit' with "
-               "appropriate arguments before using this method.")
+        msg = (
+            "This %(name)s instance is not fitted yet. Call 'fit' with "
+            "appropriate arguments before using this method."
+        )
 
-    if not hasattr(estimator, 'fit'):
+    if not hasattr(estimator, "fit"):
         raise TypeError("%s is not an estimator instance." % (estimator))
 
     if not isinstance(attributes, (list, tuple)):
         attributes = [attributes]
 
     if not all_or_any([hasattr(estimator, attr) for attr in attributes]):
-        raise NotFittedError(msg % {'name': type(estimator).__name__})
+        raise NotFittedError(msg % {"name": type(estimator).__name__})

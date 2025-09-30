@@ -88,10 +88,7 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
 
     # Pick first center randomly
     center_id = random_state.randint(n_samples)
-    if sp.issparse(X):
-        centers[0] = X[center_id].toarray()
-    else:
-        centers[0] = X[center_id]
+    centers[0] = X[center_id]
 
     # Initialize list of closest distances and calculate current potential
     closest_dist_sq = euclidean_distances(
@@ -127,10 +124,7 @@ def _k_init(X, n_clusters, x_squared_norms, random_state, n_local_trials=None):
                 best_dist_sq = new_dist_sq
 
         # Permanently add best center candidate found in local tries
-        if sp.issparse(X):
-            centers[c] = X[best_candidate].toarray()
-        else:
-            centers[c] = X[best_candidate]
+        centers[c] = X[best_candidate]
         current_pot = best_pot
         closest_dist_sq = best_dist_sq
 
@@ -249,18 +243,13 @@ def _labels_inertia(
     if distances is None:
         distances = np.zeros(shape=(0,), dtype=X.dtype)
     # distances will be changed in-place
-    if sp.issparse(X):
-        inertia = _k_means._assign_labels_csr(
-            X, x_squared_norms, centers, labels, distances=distances
+    if precompute_distances:
+        return _labels_inertia_precompute_dense(
+            X, x_squared_norms, centers, distances
         )
-    else:
-        if precompute_distances:
-            return _labels_inertia_precompute_dense(
-                X, x_squared_norms, centers, distances
-            )
-        inertia = _k_means._assign_labels_array(
-            X, x_squared_norms, centers, labels, distances=distances
-        )
+    inertia = _k_means._assign_labels_array(
+        X, x_squared_norms, centers, labels, distances=distances
+    )
     return labels, inertia
 
 
@@ -342,9 +331,6 @@ def _init_centroids(
             "be 'k-means++' or 'random' or an ndarray, "
             "'%s' (type '%s') was passed." % (init, type(init))
         )
-
-    if sp.issparse(centers):
-        centers = centers.toarray()
 
     _validate_center_shape(X, k, centers)
     return centers

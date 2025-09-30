@@ -156,8 +156,6 @@ def k_means_constrained(
         Returned only if `return_n_iter` is set to True.
 
     """
-    if sp.issparse(X):
-        raise NotImplementedError("Not implemented for sparse X")
 
     if n_init <= 0:
         raise ValueError(
@@ -197,13 +195,12 @@ def k_means_constrained(
             n_init = 1
 
     # subtract of mean of x for more accurate distance computations
-    if not sp.issparse(X):
-        X_mean = X.mean(axis=0)
-        # The copy was already done above
-        X -= X_mean
+    X_mean = X.mean(axis=0)
+    # The copy was already done above
+    X -= X_mean
 
-        if hasattr(init, "__array__"):
-            init -= X_mean
+    if hasattr(init, "__array__"):
+        init -= X_mean
 
     # precompute squared norms of data points
     x_squared_norms = row_norms(X, squared=True)
@@ -262,10 +259,9 @@ def k_means_constrained(
         best_centers = centers[best]
         best_n_iter = n_iters[best]
 
-    if not sp.issparse(X):
-        if not copy_x:
-            X += X_mean
-        best_centers += X_mean
+    if not copy_x:
+        X += X_mean
+    best_centers += X_mean
 
     if return_n_iter:
         return best_centers, best_labels, best_inertia, best_n_iter
@@ -362,8 +358,6 @@ def kmeans_constrained_single(
     n_iter : int
         Number of iterations run.
     """
-    if sp.issparse(X):
-        raise NotImplementedError("Not implemented for sparse X")
 
     random_state = check_random_state(random_state)
     n_samples = X.shape[0]
@@ -814,8 +808,6 @@ class KMeansConstrained(KMeans):
             will count more for the capacity constraints.
 
         """
-        if sp.issparse(X):
-            raise NotImplementedError("Not implemented for sparse X")
 
         random_state = check_random_state(self.random_state)
         X = self._check_fit_data(X)
@@ -869,9 +861,6 @@ class KMeansConstrained(KMeans):
         labels : array, shape [n_samples,]
             Index of the cluster each sample belongs to.
         """
-
-        if sp.issparse(X):
-            raise NotImplementedError("Not implemented for sparse X")
 
         if size_min == "init":
             size_min = self.size_min

@@ -112,7 +112,7 @@ Below is a runtime comparison between k-means and k-means-constrained whereby th
 * OS: Linux-5.15.0-75-generic-x86_64-with-glibc2.35
 * CPU: AMD EPYC 7763 64-Core Processor
 * CPU cores: 120
-* k-means-constrained version: 0.7.3
+* k-means-constrained version: 0.7.310
 * numpy version: 1.24.2
 * ortools version: 9.6.2534
 * joblib version: 1.3.1

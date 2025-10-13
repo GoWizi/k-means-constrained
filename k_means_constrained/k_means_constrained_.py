@@ -15,19 +15,19 @@
 import warnings
 
 import numpy as np
-from joblib import Parallel, delayed
-from ortools.graph.pywrapgraph import SimpleMinCostFlow
+from k_means_constrained.joblib_multiprocessing_detector import (
+    has_joblib_multiprocessing_error,
+)
 
 # Internal scikit learn methods imported into this project
-from k_means_constrained.sklearn_import.cluster._k_means import (
-    _centers_dense,
-)
+from k_means_constrained.sklearn_import.cluster._k_means import _centers_dense
 from k_means_constrained.sklearn_import.cluster.k_means_ import (
     KMeans,
     _init_centroids,
     _tolerance,
     _validate_center_shape,
 )
+from ortools.graph.pywrapgraph import SimpleMinCostFlow
 
 from .sklearn_import.metrics.pairwise import euclidean_distances
 from .sklearn_import.utils.extmath import cartesian, row_norms, squared_norm
@@ -37,6 +37,15 @@ from .sklearn_import.utils.validation import (
     check_is_fitted,
     check_random_state,
 )
+
+if has_joblib_multiprocessing_error():
+    from lambda_multiprocessing import Pool
+
+    lambda_multiprocessing = True
+else:
+    from joblib import Parallel, delayed
+
+    lambda_multiprocessing = False
 
 
 def k_means_constrained(
@@ -232,25 +241,47 @@ def k_means_constrained(
                 best_inertia = inertia
                 best_n_iter = n_iter_
     else:
-        # parallelisation of k-means runs
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
-        results = Parallel(n_jobs=n_jobs, verbose=0)(
-            delayed(kmeans_constrained_single)(
-                X,
-                n_clusters,
-                size_min=size_min,
-                size_max=size_max,
-                max_iter=max_iter,
-                init=init,
-                verbose=verbose,
-                tol=tol,
-                x_squared_norms=x_squared_norms,
-                # Change seed to ensure variety
-                random_state=seed,
-                sample_weights=sample_weights,
+        if lambda_multiprocessing:
+            with Pool() as p:
+                results = p.map(
+                    kmeans_constrained_single,
+                    [
+                        (
+                            X,
+                            n_clusters,
+                            size_min,
+                            size_max,
+                            max_iter,
+                            init,
+                            verbose,
+                            tol,
+                            x_squared_norms,
+                            seed,
+                            sample_weights,
+                        )
+                        for seed in seeds
+                    ],
+                )
+        else:
+            # parallelisation of k-means runs
+            results = Parallel(n_jobs=n_jobs, verbose=0)(
+                delayed(kmeans_constrained_single)(
+                    X,
+                    n_clusters,
+                    size_min=size_min,
+                    size_max=size_max,
+                    max_iter=max_iter,
+                    init=init,
+                    verbose=verbose,
+                    tol=tol,
+                    x_squared_norms=x_squared_norms,
+                    # Change seed to ensure variety
+                    random_state=seed,
+                    sample_weights=sample_weights,
+                )
+                for seed in seeds
             )
-            for seed in seeds
-        )
         # Get results with the lowest inertia
         labels, inertia, centers, n_iters = zip(*results)
         best = np.argmin(inertia)

@@ -3,14 +3,26 @@ import warnings
 from functools import partial
 
 import numpy as np
-from joblib import cpu_count, delayed, Parallel
+from k_means_constrained.joblib_multiprocessing_detector import (
+    has_joblib_multiprocessing_error,
+)
+
+if has_joblib_multiprocessing_error():
+    from functools import partial
+    from multiprocessing import cpu_count
+
+    from lambda_multiprocessing import Pool
+
+    lambda_multiprocessing = True
+else:
+    from joblib import Parallel, cpu_count, delayed
+
+    lambda_multiprocessing = False
 
 from k_means_constrained.sklearn_import.preprocessing.data import normalize
-
 from k_means_constrained.sklearn_import.utils import gen_batches, gen_even_slices
-
-from k_means_constrained.sklearn_import.utils.validation import check_array
 from k_means_constrained.sklearn_import.utils.extmath import row_norms, safe_sparse_dot
+from k_means_constrained.sklearn_import.utils.validation import check_array
 
 
 def euclidean_distances(
@@ -594,10 +606,15 @@ def _parallel_pairwise(X, Y, func, n_jobs, **kwds):
         return func(X, Y, **kwds)
 
     # TODO: in some cases, backend='threading' may be appropriate
-    fd = delayed(func)
-    ret = Parallel(n_jobs=n_jobs, verbose=0)(
-        fd(X, Y[s], **kwds) for s in gen_even_slices(Y.shape[0], n_jobs)
-    )
+    if lambda_multiprocessing:
+        with Pool() as p:
+            fd = lambda x: func(X, x, **kwds)
+            ret = p.map(fd, [Y[s] for s in gen_even_slices(Y.shape[0], n_jobs)])
+    else:
+        fd = delayed(func)
+        ret = Parallel(n_jobs=n_jobs, verbose=0)(
+            fd(X, Y[s], **kwds) for s in gen_even_slices(Y.shape[0], n_jobs)
+        )
 
     return np.hstack(ret)
 

@@ -48,6 +48,11 @@ else:
     lambda_multiprocessing = False
 
 
+def _kmeans_constrained_single_wrapper(args):
+    """Wrapper function for multiprocessing that can be pickled."""
+    return kmeans_constrained_single(*args)
+
+
 def k_means_constrained(
     X,
     n_clusters,
@@ -243,10 +248,6 @@ def k_means_constrained(
     else:
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
         if lambda_multiprocessing:
-
-            def _kmeans_constrained_single_wrapper(args):
-                return kmeans_constrained_single(*args)
-
             with Pool() as p:
                 results = p.map(
                     _kmeans_constrained_single_wrapper,

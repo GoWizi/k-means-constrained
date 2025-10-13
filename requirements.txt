@@ -2,3 +2,4 @@ ortools==8.2.8710
 numpy>=1.23.0
 six
 joblib
+lambda-multiprocessing

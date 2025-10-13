@@ -243,9 +243,13 @@ def k_means_constrained(
     else:
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
         if lambda_multiprocessing:
+
+            def _kmeans_constrained_single_wrapper(args):
+                return kmeans_constrained_single(*args)
+
             with Pool() as p:
                 results = p.map(
-                    kmeans_constrained_single,
+                    _kmeans_constrained_single_wrapper,
                     [
                         (
                             X,

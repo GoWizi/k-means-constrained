@@ -260,9 +260,9 @@ def k_means_constrained(
                             max_iter,
                             init,
                             verbose,
-                            tol,
                             x_squared_norms,
                             seed,
+                            tol,
                             sample_weights,
                         )
                         for seed in seeds

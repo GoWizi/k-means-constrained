@@ -39,7 +39,7 @@ from .sklearn_import.utils.validation import (
 )
 
 if has_joblib_multiprocessing_error():
-    from lambda_multiprocessing import Pool
+    import concurrent.futures
 
     lambda_multiprocessing = True
 else:
@@ -248,10 +248,13 @@ def k_means_constrained(
     else:
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
         if lambda_multiprocessing:
-            with Pool() as p:
-                results = p.map(
-                    _kmeans_constrained_single_wrapper,
-                    [
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(seeds)
+            ) as executor:
+                futures = [
+                    executor.submit(
+                        _kmeans_constrained_single_wrapper,
                         (
                             X,
                             n_clusters,
@@ -264,10 +267,12 @@ def k_means_constrained(
                             seed,
                             tol,
                             sample_weights,
-                        )
-                        for seed in seeds
-                    ],
-                )
+                        ),
+                    )
+                    for seed in seeds
+                ]
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
         else:
             # parallelisation of k-means runs
             results = Parallel(n_jobs=n_jobs, verbose=0)(

@@ -8,10 +8,9 @@ from k_means_constrained.joblib_multiprocessing_detector import (
 )
 
 if has_joblib_multiprocessing_error():
+    import concurrent.futures
     from functools import partial
     from multiprocessing import cpu_count
-
-    from lambda_multiprocessing import Pool
 
     lambda_multiprocessing = True
 else:
@@ -607,9 +606,15 @@ def _parallel_pairwise(X, Y, func, n_jobs, **kwds):
 
     # TODO: in some cases, backend='threading' may be appropriate
     if lambda_multiprocessing:
-        with Pool() as p:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
             fd = lambda x: func(X, x, **kwds)
-            ret = p.map(fd, [Y[s] for s in gen_even_slices(Y.shape[0], n_jobs)])
+            futures = [
+                executor.submit(fd, Y[s]) for s in gen_even_slices(Y.shape[0], n_jobs)
+            ]
+
+        ret = []
+        for future in concurrent.futures.as_completed(futures):
+            ret.append(future.result())
     else:
         fd = delayed(func)
         ret = Parallel(n_jobs=n_jobs, verbose=0)(

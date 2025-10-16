@@ -15,9 +15,7 @@
 import warnings
 
 import numpy as np
-from k_means_constrained.joblib_multiprocessing_detector import (
-    has_joblib_multiprocessing_error,
-)
+from joblib import Parallel, delayed
 
 # Internal scikit learn methods imported into this project
 from k_means_constrained.sklearn_import.cluster._k_means import _centers_dense
@@ -37,20 +35,6 @@ from .sklearn_import.utils.validation import (
     check_is_fitted,
     check_random_state,
 )
-
-if has_joblib_multiprocessing_error():
-    import concurrent.futures
-
-    lambda_multiprocessing = True
-else:
-    from joblib import Parallel, delayed
-
-    lambda_multiprocessing = False
-
-
-def _kmeans_constrained_single_wrapper(args):
-    """Wrapper function for multiprocessing that can be pickled."""
-    return kmeans_constrained_single(*args)
 
 
 def k_means_constrained(
@@ -226,6 +210,8 @@ def k_means_constrained(
         # of the best results (as opposed to one set per run per thread).
         for it in range(n_init):
             # run a k-means once
+            if verbose:
+                print(f"Running k-means constrained (iteration {it + 1}/{n_init})")
             labels, inertia, centers, n_iter_ = kmeans_constrained_single(
                 X,
                 n_clusters,
@@ -247,51 +233,23 @@ def k_means_constrained(
                 best_n_iter = n_iter_
     else:
         seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
-        if lambda_multiprocessing:
-            results = []
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=len(seeds)
-            ) as executor:
-                futures = [
-                    executor.submit(
-                        _kmeans_constrained_single_wrapper,
-                        (
-                            X,
-                            n_clusters,
-                            size_min,
-                            size_max,
-                            max_iter,
-                            init,
-                            verbose,
-                            x_squared_norms,
-                            seed,
-                            tol,
-                            sample_weights,
-                        ),
-                    )
-                    for seed in seeds
-                ]
-            for future in concurrent.futures.as_completed(futures):
-                results.append(future.result())
-        else:
-            # parallelisation of k-means runs
-            results = Parallel(n_jobs=n_jobs, verbose=0)(
-                delayed(kmeans_constrained_single)(
-                    X,
-                    n_clusters,
-                    size_min=size_min,
-                    size_max=size_max,
-                    max_iter=max_iter,
-                    init=init,
-                    verbose=verbose,
-                    tol=tol,
-                    x_squared_norms=x_squared_norms,
-                    # Change seed to ensure variety
-                    random_state=seed,
-                    sample_weights=sample_weights,
-                )
-                for seed in seeds
+        results = Parallel(n_jobs=n_jobs, verbose=0 if not verbose else 11)(
+            delayed(kmeans_constrained_single)(
+                X,
+                n_clusters,
+                size_min=size_min,
+                size_max=size_max,
+                max_iter=max_iter,
+                init=init,
+                verbose=verbose,
+                tol=tol,
+                x_squared_norms=x_squared_norms,
+                # Change seed to ensure variety
+                random_state=seed,
+                sample_weights=sample_weights,
             )
+            for seed in seeds
+        )
         # Get results with the lowest inertia
         labels, inertia, centers, n_iters = zip(*results)
         best = np.argmin(inertia)

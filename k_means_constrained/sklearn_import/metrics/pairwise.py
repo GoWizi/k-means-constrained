@@ -3,21 +3,7 @@ import warnings
 from functools import partial
 
 import numpy as np
-from k_means_constrained.joblib_multiprocessing_detector import (
-    has_joblib_multiprocessing_error,
-)
-
-if has_joblib_multiprocessing_error():
-    import concurrent.futures
-    from functools import partial
-    from multiprocessing import cpu_count
-
-    lambda_multiprocessing = True
-else:
-    from joblib import Parallel, cpu_count, delayed
-
-    lambda_multiprocessing = False
-
+from joblib import Parallel, cpu_count, delayed
 from k_means_constrained.sklearn_import.preprocessing.data import normalize
 from k_means_constrained.sklearn_import.utils import gen_batches, gen_even_slices
 from k_means_constrained.sklearn_import.utils.extmath import row_norms, safe_sparse_dot
@@ -605,21 +591,10 @@ def _parallel_pairwise(X, Y, func, n_jobs, **kwds):
         return func(X, Y, **kwds)
 
     # TODO: in some cases, backend='threading' may be appropriate
-    if lambda_multiprocessing:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=n_jobs) as executor:
-            fd = lambda x: func(X, x, **kwds)
-            futures = [
-                executor.submit(fd, Y[s]) for s in gen_even_slices(Y.shape[0], n_jobs)
-            ]
-
-        ret = []
-        for future in concurrent.futures.as_completed(futures):
-            ret.append(future.result())
-    else:
-        fd = delayed(func)
-        ret = Parallel(n_jobs=n_jobs, verbose=0)(
-            fd(X, Y[s], **kwds) for s in gen_even_slices(Y.shape[0], n_jobs)
-        )
+    fd = delayed(func)
+    ret = Parallel(n_jobs=n_jobs, verbose=0)(
+        fd(X, Y[s], **kwds) for s in gen_even_slices(Y.shape[0], n_jobs)
+    )
 
     return np.hstack(ret)
 
